@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snap Detection Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #videoContainer {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        #gameFilm {
+            width: 100%;
+            max-height: 400px;
+        }
+        #snapForm {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        .jersey-input {
+            padding: 8px;
+            font-size: 16px;
+            width: 60px;
+            text-align: center;
+        }
+        #logSnapBtn, #clearDataBtn {
+            padding: 8px 16px;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 5px;
+        }
+        #logSnapBtn {
+            background-color: #8B0000;
+            color: white;
+        }
+        #logSnapBtn:hover {
+            background-color: #6B0000;
+        }
+        #clearDataBtn {
+            background-color: #dc3545;
+            color: white;
+        }
+        #clearDataBtn:hover {
+            background-color: #c82333;
+        }
+        #downloadBtn {
+            display: block;
+            margin: 10px auto;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            text-align: center;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        #downloadBtn:hover {
+            background-color: #0056b3;
+        }
+        #totalPlays {
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #8B0000;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background-color: white;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: center;
+        }
+        th {
+            background-color: #8B0000;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .snap-count {
+            font-weight: bold;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Snap Detection Tracker</h1>
+    <p style="text-align: center; font-size: 16px;">Enter jersey numbers for ~10 players (red team) on the field, then click "Log Snap" or press Spacebar when the ball is snapped</p>
+    <div id="videoContainer">
+        <input type="file" id="videoInput" accept="video/*">
+        <video id="gameFilm" controls style="display: none;"></video>
+    </div>
+    <div id="totalPlays">Total Snaps Logged: 0</div>
+    <form id="snapForm">
+        <div id="jerseyInputs"></div>
+        <button type="button" id="logSnapBtn">Log Snap</button>
+        <button type="button" id="clearDataBtn">Clear All Data</button>
+    </form>
+    <a id="downloadBtn" href="#" style="display: none;">Download Snap Counts as CSV</a>
+    <h2>Snap Count Summary</h2>
+    <table id="summaryTable">
+        <thead>
+            <tr>
+                <th>Jersey #</th>
+                <th>Snaps Played</th>
+                <th>% of Total Snaps</th>
+            </tr>
+        </thead>
+        <tbody id="summaryTableBody"></tbody>
+    </table>
+
+    <script>
+        let allSnaps = JSON.parse(localStorage.getItem('allSnaps')) || [];
+        const jerseyInputsDiv = document.getElementById('jerseyInputs');
+        const summaryTableBody = document.getElementById('summaryTableBody');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const totalPlaysDiv = document.getElementById('totalPlays');
+        const logSnapBtn = document.getElementById('logSnapBtn');
+        const clearDataBtn = document.getElementById('clearDataBtn');
+
+        // Load video
+        const videoInput = document.getElementById('videoInput');
+        const gameFilm = document.getElementById('gameFilm');
+        videoInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                gameFilm.src = URL.createObjectURL(file);
+                gameFilm.style.display = 'block';
+            }
+        });
+
+        // Create 10 jersey inputs
+        function createJerseyInputs() {
+            jerseyInputsDiv.innerHTML = '';
+            for (let i = 0; i < 10; i++) {
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'jersey-input';
+                input.min = '1';
+                input.max = '99';
+                input.placeholder = `#${i+1}`;
+                jerseyInputsDiv.appendChild(input);
+            }
+        }
+
+        // Get current jerseys
+        function getCurrentJerseys() {
+            return Array.from(jerseyInputsDiv.querySelectorAll('input'))
+                .map(input => input.value)
+                .filter(num => num !== '' && !isNaN(num) && num > 0)
+                .map(num => num.toString());
+        }
+
+        // Calculate summary
+        function getSummary() {
+            const summary = {};
+            allSnaps.forEach(snap => {
+                snap.jerseys.forEach(jersey => {
+                    if (jersey) {
+                        summary[jersey] = (summary[jersey] || 0) + 1;
+                    }
+                });
+            });
+            return summary;
+        }
+
+        // Render summary
+        function renderSummary() {
+            const summary = getSummary();
+            const totalSnaps = allSnaps.length;
+            summaryTableBody.innerHTML = '';
+            Object.entries(summary)
+                .sort(([, a], [, b]) => b - a)
+                .forEach(([jersey, snaps]) => {
+                    const percentage = totalSnaps > 0 ? ((snaps / totalSnaps) * 100).toFixed(1) : 0;
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${jersey}</td>
+                        <td class="snap-count">${snaps}</td>
+                        <td>${percentage}%</td>
+                    `;
+                    summaryTableBody.appendChild(row);
+                });
+            totalPlaysDiv.textContent = `Total Snaps Logged: ${totalSnaps}`;
+            downloadBtn.style.display = totalSnaps > 0 ? 'block' : 'none';
+        }
+
+        // Log snap
+        function logSnap() {
+            const jerseys = getCurrentJerseys();
+            if (jerseys.length === 0) {
+                alert('Please enter at least one jersey number.');
+                return;
+            }
+            allSnaps.push({
+                jerseys,
+                timestamp: new Date().toLocaleString()
+            });
+            localStorage.setItem('allSnaps', JSON.stringify(allSnaps));
+            renderSummary();
+        }
+
+        // Button click
+        logSnapBtn.addEventListener('click', logSnap);
+
+        // Spacebar keypress
+        document.addEventListener('keydown', (event) => {
+            if (event.code === 'Space' && document.activeElement.tagName !== 'INPUT') {
+                event.preventDefault();
+                logSnap();
+            }
+        });
+
+        // Clear all data
+        clearDataBtn.addEventListener('click', () => {
+            if (confirm('Clear all snap data? This cannot be undone.')) {
+                allSnaps = [];
+                localStorage.setItem('allSnaps', JSON.stringify(allSnaps));
+                renderSummary();
+                createJerseyInputs();
+            }
+        });
+
+        // Download CSV
+        downloadBtn.addEventListener('click', () => {
+            const summary = getSummary();
+            const totalSnaps = allSnaps.length;
+            let csvContent = 'Jersey #,Snaps Played,Percentage\n';
+            Object.entries(summary)
+                .sort(([, a], [, b]) => b - a)
+                .forEach(([jersey, snaps]) => {
+                    const percentage = totalSnaps > 0 ? ((snaps / totalSnaps) * 100).toFixed(1) : 0;
+                    csvContent += `${jersey},${snaps},${percentage}%\n`;
+                });
+            csvContent += '\nDetailed Log\nSnap #,Jersey Numbers,Timestamp\n';
+            allSnaps.forEach((snap, index) => {
+                csvContent += `${index + 1},"${snap.jerseys.join(', ')}","${snap.timestamp}"\n`;
+            });
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            downloadBtn.href = URL.createObjectURL(blob);
+            downloadBtn.download = 'snap_detection_counts.csv';
+        });
+
+        // Initial setup
+        createJerseyInputs();
+        renderSummary();
+    </script>
+</body>
+</html>
